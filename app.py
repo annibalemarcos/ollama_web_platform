@@ -537,6 +537,7 @@ def index():
         "ollama_status": check_ollama(),
         "busy_job": None,
         "pc_stats_enabled": env.get("PC_STATS_ENABLED", "0") == "1",
+        "ready_made_search_enabled": env.get("READY_MADE_SEARCH_ENABLED", "0") == "1",
     }
 
     if request.method == "POST":
@@ -550,10 +551,14 @@ def index():
 
         # Perfil de execução: controla os menus visíveis e também garante o comportamento no backend.
         if execution_profile == "local_only":
-            mode = "direto"
+            # Local-only bloqueia web/cloud de busca, mas mantém os ajustes escolhidos no acordeão.
+            # Assim dá para usar modo Técnico, grupo Código, Local leve etc. sem sair do perfil local.
             response_engine = "ollama"
             search_engine = "local_only"
-            task_group = "local_fast"
+            if mode in {"web", "mercado", "vendedor"}:
+                mode = "direto"
+            if task_group == "auto":
+                task_group = "local_fast"
         elif execution_profile == "web":
             mode = "web"
             if search_engine == "local_only":
@@ -878,6 +883,7 @@ def settings():
                 "OLLAMA_REQUEST_TIMEOUT": request.form.get("ollama_request_timeout", "600").strip() or "600",
                 "APP_BUSY_REJECT": "1" if request.form.get("app_busy_reject") == "on" else "0",
                 "PC_STATS_ENABLED": "1" if request.form.get("pc_stats_enabled") == "on" else "0",
+                "READY_MADE_SEARCH_ENABLED": "1" if request.form.get("ready_made_search_enabled") == "on" else "0",
             }
 
             if clear_key:

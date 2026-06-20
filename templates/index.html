@@ -134,6 +134,24 @@
                 </div>
             </div>
 
+            {% if ready_made_search_enabled %}
+            <div class="ready-made-search-card mb-4" data-ready-made-search>
+                <div class="ready-made-search-head">
+                    <div>
+                        <div class="ready-made-kicker">Ready made search</div>
+                        <strong>Pesquisas prontas</strong>
+                        <p>Importe uma busca pronta em JSON para preencher pergunta + configurações. Exporte quando gostar do setup.</p>
+                    </div>
+                    <div class="ready-made-actions">
+                        <input type="file" id="readyMadeImportFile" accept=".json,application/json" class="d-none" onchange="importReadyMadeSearchFromFile(this)">
+                        <button type="button" class="btn btn-soft btn-sm" onclick="document.getElementById('readyMadeImportFile').click()"><i class="bi bi-upload"></i> Importar</button>
+                        <button type="button" class="btn btn-dark btn-sm" onclick="exportReadyMadeSearch()"><i class="bi bi-download"></i> Exportar</button>
+                    </div>
+                </div>
+                <div class="ready-made-status" id="readyMadeStatus">Pronto para importar/exportar pesquisas em JSON.</div>
+            </div>
+            {% endif %}
+
             <div class="row g-3 execution-layout">
                 <div class="col-12">
                     <div class="mini-control-card execution-profile-card">
@@ -257,11 +275,11 @@
                     </details>
                 </div>
 
-                <div class="col-12 execution-panel {% if execution_profile not in ['web', 'cloud_web', 'advanced', 'all'] %}d-none{% endif %}" data-execution-panel="advanced">
-                    <details class="execution-accordion" id="advancedEnginesPanel" {% if execution_profile in ['web', 'cloud_web', 'advanced', 'all'] %}open{% endif %}>
+                <div class="col-12 execution-panel {% if execution_profile not in ['local_only', 'web', 'cloud_web', 'advanced', 'all'] %}d-none{% endif %}" data-execution-panel="advanced">
+                    <details class="execution-accordion" id="advancedEnginesPanel" {% if execution_profile in ['local_only', 'web', 'cloud_web', 'advanced', 'all'] %}open{% endif %}>
                         <summary>
                             <span><i class="bi bi-diagram-3"></i> Motores, busca e fontes</span>
-                            <small>Busca web/local-only, grupos, fontes e motor de resposta.</small>
+                            <small>Modo, grupo, busca local-only/web, fontes e motor de resposta.</small>
                         </summary>
                         <div class="execution-accordion-body">
                             <div class="row g-3">

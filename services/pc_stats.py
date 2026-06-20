@@ -74,7 +74,9 @@ def collect_pc_stats() -> Dict[str, Any]:
         return {"ok": False, "available": False, "message": "psutil não está instalado."}
 
     now = time.time()
-    cpu_percent = psutil.cpu_percent(interval=None)
+    # interval=None costuma retornar 0% na primeira leitura.
+    # Como o app só consulta quando o painel/modal está visível, uma amostra curtinha deixa o CPU real sem pesar o PC.
+    cpu_percent = psutil.cpu_percent(interval=0.15)
     memory = psutil.virtual_memory()
 
     try:

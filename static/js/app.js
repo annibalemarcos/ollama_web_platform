@@ -328,7 +328,7 @@ function applyExecutionProfile() {
     const advancedDetails = document.getElementById('advancedEnginesPanel');
 
     const showLocal = ['standard', 'local_only', 'web', 'advanced', 'all'].includes(profile);
-    const showAdvanced = ['web', 'cloud_web', 'advanced', 'all'].includes(profile);
+    const showAdvanced = ['local_only', 'web', 'cloud_web', 'advanced', 'all'].includes(profile);
 
     if (localPanel) localPanel.classList.toggle('d-none', !showLocal);
     if (advancedPanel) advancedPanel.classList.toggle('d-none', !showAdvanced);
@@ -337,14 +337,16 @@ function applyExecutionProfile() {
         localDetails.open = ['local_only', 'web', 'advanced', 'all'].includes(profile);
     }
     if (advancedDetails) {
-        advancedDetails.open = showAdvanced;
+        advancedDetails.open = ['local_only', 'web', 'cloud_web', 'advanced', 'all'].includes(profile);
     }
 
     if (profile === 'local_only') {
-        setSelectValueByName('mode', 'direto');
         setSelectValueByName('response_engine', 'ollama');
         setSelectValueByName('search_engine', 'local_only');
-        setSelectValueByName('task_group', 'local_fast');
+        const modeSelect = document.querySelector('[name="mode"]');
+        if (modeSelect && modeSelect.value === 'web') setSelectValueByName('mode', 'direto');
+        const groupSelect = document.querySelector('[name="task_group"]');
+        if (groupSelect && groupSelect.value === 'auto') setSelectValueByName('task_group', 'local_fast');
     } else if (profile === 'web') {
         setSelectValueByName('mode', 'web');
         setSelectValueByName('response_engine', 'ollama');
@@ -541,7 +543,7 @@ const HELP_CONTENT = {
             <p><strong>Esse menu escolhe o caminho principal da pergunta.</strong> Ele serve para não deixar modelo, busca, motores e fontes todos jogados na tela ao mesmo tempo.</p>
             <div class="help-grid help-grid-wide">
                 <div><strong>Padrão</strong><br><span class="help-pill-local">Ollama local</span><br>Roda como antes: usa o modelo local selecionado e mantém os ajustes avançados escondidos.</div>
-                <div><strong>Somente local</strong><br><span class="help-pill-local">Sem web/API de busca</span><br>Força busca local-only. Não chama buscadores externos; bom para economizar cloud e usar só seu PC.</div>
+                <div><strong>Somente local</strong><br><span class="help-pill-local">Sem web/API de busca</span><br>Força motor de busca local-only e resposta no Ollama local, mas agora também abre os ajustes de modo/grupo para você escolher Técnico, Local leve, Código etc.</div>
                 <div><strong>Pesquisa Web guiada</strong><br><span class="help-pill-web">Busca web + resposta local</span><br>Busca fontes na web, mas a resposta final continua no Ollama local selecionado.</div>
                 <div><strong>Web/Cloud sem local</strong><br><span class="help-pill-web">Sem Ollama local</span><br>Busca web e gera a resposta em uma IA externa ativa/configurada, como Perplexity, ChatGPT, Claude ou Gemini.</div>
                 <div><strong>Avançado</strong><br>Mostra os dois acordeões para você escolher modelo local, motor de resposta, motor de busca, grupo e fontes manualmente.</div>
@@ -1059,6 +1061,132 @@ document.addEventListener('DOMContentLoaded', () => {
     filterExternalProviders();
 });
 
+function readyMadeSetStatus(message, isError = false) {
+    const el = document.getElementById('readyMadeStatus');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.toggle('is-error', Boolean(isError));
+}
+
+function currentReadyMadeSearchPayload() {
+    const getValue = (name) => {
+        const el = form?.querySelector(`[name="${name}"]`);
+        return el ? el.value : '';
+    };
+    const cleanAnswer = document.getElementById('answerBox')?.innerText || '';
+    const fullAnswer = document.getElementById('answerCopyText')?.value || cleanAnswer;
+    return {
+        format: 'ollama-web-platform-ready-made-search-v1',
+        app: 'Ollama Web Platform',
+        exported_at: new Date().toISOString(),
+        title: (getValue('query') || 'Pesquisa pronta').split('\n')[0].slice(0, 90),
+        query: getValue('query'),
+        config: {
+            execution_profile: getValue('execution_profile'),
+            model: getValue('model'),
+            mode: getValue('mode'),
+            response_engine: getValue('response_engine'),
+            search_engine: getValue('search_engine'),
+            task_group: getValue('task_group'),
+            max_results: getValue('max_results'),
+            temperature: getValue('temperature')
+        },
+        answer: {
+            clean: cleanAnswer,
+            full: fullAnswer
+        },
+        notes: 'Importe este JSON no menu Pesquisar para restaurar pergunta + configurações e clicar em Buscar.'
+    };
+}
+
+function exportReadyMadeSearch() {
+    const payload = currentReadyMadeSearchPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    link.href = URL.createObjectURL(blob);
+    link.download = `ready_made_search_${stamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    readyMadeSetStatus('Pesquisa atual exportada em JSON.');
+}
+
+function getReadyMadeConfig(data) {
+    if (!data || typeof data !== 'object') return {};
+    return data.config || data.settings || data.ready_made_search?.config || data.search?.config || data;
+}
+
+function getReadyMadeQuery(data) {
+    if (!data || typeof data !== 'object') return '';
+    return data.query || data.prompt || data.search?.query || data.ready_made_search?.query || '';
+}
+
+function setNamedField(name, value) {
+    if (value === undefined || value === null || value === '') return;
+    const el = form?.querySelector(`[name="${name}"]`);
+    if (!el) return;
+    if (el.tagName === 'SELECT') {
+        const hasOption = Array.from(el.options || []).some((option) => option.value === String(value));
+        if (hasOption) el.value = String(value);
+        return;
+    }
+    el.value = String(value);
+}
+
+function applyReadyMadeSearch(data) {
+    const config = getReadyMadeConfig(data);
+    const query = getReadyMadeQuery(data);
+    if (query) {
+        const questionInput = document.getElementById('questionInput');
+        if (questionInput) questionInput.value = query;
+    }
+
+    // Perfil primeiro, porque ele abre/fecha acordeões e ajusta defaults.
+    setNamedField('execution_profile', config.execution_profile || config.profile || config.como_rodar);
+    applyExecutionProfile();
+
+    const map = {
+        mode: config.mode || config.modo,
+        response_engine: config.response_engine || config.motor_resposta,
+        search_engine: config.search_engine || config.motor_busca,
+        task_group: config.task_group || config.grupo_recomendado || config.group,
+        max_results: config.max_results || config.fontes,
+        temperature: config.temperature || config.temperatura
+    };
+    Object.entries(map).forEach(([name, value]) => setNamedField(name, value));
+
+    const importedModel = config.model || config.modelo;
+    let modelWarning = '';
+    if (importedModel) {
+        const wanted = String(importedModel).toLowerCase();
+        const exactChoice = modelChoices.find((choice) => String(choice.dataset.name || '').toLowerCase() === wanted);
+        if (exactChoice) {
+            selectModel(exactChoice);
+        } else {
+            if (modelInput) modelInput.value = importedModel;
+            modelWarning = ' Modelo importado não apareceu no catálogo; confira antes de buscar.';
+        }
+    }
+
+    readyMadeSetStatus(`Pesquisa importada. Revise os campos e clique no botão azul para buscar.${modelWarning}`);
+}
+
+async function importReadyMadeSearchFromFile(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    try {
+        const raw = await file.text();
+        const data = JSON.parse(raw);
+        applyReadyMadeSearch(data);
+    } catch (err) {
+        readyMadeSetStatus('Não consegui importar. Verifique se o arquivo é um JSON válido.', true);
+    } finally {
+        if (input) input.value = '';
+    }
+}
+
 let pcStatsTimer = null;
 
 function getNestedValue(obj, path) {
@@ -1073,6 +1201,37 @@ function formatPcStat(path, value) {
     return value;
 }
 
+function pcStatPercentForPath(path, value, data) {
+    const numericValue = Number(value || 0);
+    if (['cpu.percent', 'memory.percent', 'disk.percent'].includes(path)) {
+        return Math.max(0, Math.min(100, numericValue));
+    }
+    if (['processes.ollama.memory_mb', 'processes.python.memory_mb'].includes(path)) {
+        const totalMb = Number(data?.memory?.total_gb || 0) * 1024;
+        if (!totalMb) return 0;
+        return Math.max(0, Math.min(100, (numericValue / totalMb) * 100));
+    }
+    return null;
+}
+
+function pcStatLevel(percent) {
+    if (percent === null || percent === undefined) return 'info';
+    if (percent >= 93) return 'critical';
+    if (percent >= 80) return 'hot';
+    if (percent >= 60) return 'warn';
+    return 'ok';
+}
+
+function applyPcStatColor(el, path, value, data) {
+    const card = el.closest('.pc-stat-card');
+    if (!card) return;
+    card.classList.remove('pc-stat-ok', 'pc-stat-warn', 'pc-stat-hot', 'pc-stat-critical', 'pc-stat-info');
+    const percent = pcStatPercentForPath(path, value, data);
+    const level = pcStatLevel(percent);
+    card.classList.add(`pc-stat-${level}`);
+    card.style.setProperty('--usage-pct', percent === null || percent === undefined ? '0%' : `${Math.round(percent)}%`);
+}
+
 function renderPcStats(data) {
     const message = document.getElementById('pcStatsMessage');
     if (!data || !data.ok) {
@@ -1084,12 +1243,13 @@ function renderPcStats(data) {
         const path = el.dataset.pcStat;
         const value = path === 'updated_at' ? 'now' : getNestedValue(data, path);
         el.textContent = formatPcStat(path, value);
+        applyPcStatColor(el, path, value, data);
     });
 
     if (message) {
         const ram = data.memory ? `${data.memory.used_gb} GB / ${data.memory.total_gb} GB` : '--';
-        const cpu = data.cpu ? `${data.cpu.count} threads` : '--';
-        message.textContent = `CPU: ${cpu} · RAM: ${ram} · leitura leve a cada 2s enquanto visível.`;
+        const cpu = data.cpu ? `${data.cpu.count} threads · leitura por amostra curta` : '--';
+        message.textContent = `CPU: ${cpu} · RAM: ${ram} · cores: verde ok, amarelo atenção, laranja alto, vermelho crítico.`;
     }
 }
 

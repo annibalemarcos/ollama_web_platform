@@ -29,6 +29,7 @@ DEFAULTS = {
     "CLOUD_AI_TIMEOUT": "120",
     "APP_BUSY_REJECT": "1",
     "PC_STATS_ENABLED": "0",
+    "READY_MADE_SEARCH_ENABLED": "0",
     "AI_CHATGPT_MODEL": "gpt-4o-mini",
     "AI_PERPLEXITY_MODEL": "sonar",
     "AI_CLAUDE_MODEL": "claude-3-5-haiku-latest",
@@ -85,6 +86,7 @@ def write_env_file(updates: Dict[str, str]) -> Dict[str, str]:
         f"CLOUD_AI_TIMEOUT={data.get('CLOUD_AI_TIMEOUT', '120')}",
         f"APP_BUSY_REJECT={data.get('APP_BUSY_REJECT', '1')}",
         f"PC_STATS_ENABLED={data.get('PC_STATS_ENABLED', '0')}",
+        f"READY_MADE_SEARCH_ENABLED={data.get('READY_MADE_SEARCH_ENABLED', '0')}",
         "",
         "# Provedores externos de IA/busca. Chaves ficam locais neste .env.",
     ]
