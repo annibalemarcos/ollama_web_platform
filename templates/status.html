@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}Status · Ollama Web Platform{% endblock %}
+
+{% macro stat_card(label, value, icon, hint='') %}
+<div class="col-md-6 col-xl-3">
+    <div class="card clean-card stat-card h-100">
+        <div class="card-body p-4">
+            <div class="stat-icon"><i class="bi {{ icon }}"></i></div>
+            <div class="stat-value">{{ value }}</div>
+            <div class="stat-label">{{ label }}</div>
+            {% if hint %}<div class="stat-hint">{{ hint }}</div>{% endif %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+{% macro limit_bar(label, current, limit) %}
+{% set pct = (current / limit * 100) if limit else 0 %}
+{% set pct_display = 100 if pct > 100 else pct %}
+<div class="limit-row">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong>{{ label }}</strong>
+        {% if limit %}
+            <span>{{ current }} / {{ limit }} buscas</span>
+        {% else %}
+            <span class="text-muted">limite não configurado</span>
+        {% endif %}
+    </div>
+    <div class="progress clean-progress" role="progressbar">
+        <div class="progress-bar {% if pct >= 90 %}bg-danger{% elif pct >= 70 %}bg-warning{% else %}bg-dark{% endif %}" style="width: {{ pct_display }}%"></div>
+    </div>
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Status e uso</h1>
+        <p>Estatísticas registradas localmente pelo app, sem chute místico.</p>
+    </div>
+    <a class="btn btn-soft" href="{{ url_for('settings') }}"><i class="bi bi-sliders"></i> Configurações</a>
+</div>
+
+{% if pc_stats_enabled %}
+<div class="card clean-card mb-4" id="pcStatsPanel" data-pc-stats-panel>
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+            <div>
+                <h2 class="section-title mb-1"><i class="bi bi-speedometer2"></i> Stats do PC em tempo real</h2>
+                <p class="text-muted mb-0">Atualiza enquanto esta página estiver aberta. Para desligar e economizar consultas, vá em Configurações.</p>
+            </div>
+            <button class="btn btn-soft btn-icon-only" type="button" onclick="refreshPcStats()" title="Atualizar agora" aria-label="Atualizar stats do PC"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="pc-stats-grid" data-pc-stats-root>
+            <div class="pc-stat-card"><i class="bi bi-cpu"></i><strong data-pc-stat="cpu.percent">--</strong><span>CPU</span></div>
+            <div class="pc-stat-card"><i class="bi bi-memory"></i><strong data-pc-stat="memory.percent">--</strong><span>RAM</span></div>
+            <div class="pc-stat-card"><i class="bi bi-hdd"></i><strong data-pc-stat="disk.percent">--</strong><span>Disco</span></div>
+            <div class="pc-stat-card"><i class="bi bi-download"></i><strong data-pc-stat="network.download_label">--</strong><span>Download</span></div>
+            <div class="pc-stat-card"><i class="bi bi-upload"></i><strong data-pc-stat="network.upload_label">--</strong><span>Upload</span></div>
+            <div class="pc-stat-card"><i class="bi bi-box"></i><strong data-pc-stat="processes.ollama.memory_mb">--</strong><span>Ollama MB</span></div>
+            <div class="pc-stat-card"><i class="bi bi-filetype-py"></i><strong data-pc-stat="processes.python.memory_mb">--</strong><span>Python MB</span></div>
+            <div class="pc-stat-card"><i class="bi bi-clock-history"></i><strong data-pc-stat="updated_at">--</strong><span>Atualizado</span></div>
+        </div>
+        <div class="text-muted small mt-3" id="pcStatsMessage">Aguardando primeira leitura...</div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4 mb-4">
+    {{ stat_card('Buscas na última hora', stats.hour.web_searches or 0, 'bi-lightning-charge') }}
+    {{ stat_card('Buscas hoje', stats.day.web_searches or 0, 'bi-calendar-day') }}
+    {{ stat_card('Buscas na semana', stats.week.web_searches or 0, 'bi-calendar-week') }}
+    {{ stat_card('Buscas no mês', stats.month.web_searches or 0, 'bi-calendar3') }}
+</div>
+
+<div class="row g-4 mb-4">
+    {{ stat_card('Respostas geradas hoje', stats.day.successful_answers or 0, 'bi-chat-square-text') }}
+    {{ stat_card('Erros hoje', stats.day.errors or 0, 'bi-exclamation-triangle') }}
+    {{ stat_card('Tokens entrada hoje', stats.day.input_tokens or 0, 'bi-arrow-down-left-square') }}
+    {{ stat_card('Tokens saída hoje', stats.day.output_tokens or 0, 'bi-arrow-up-right-square') }}
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-7">
+        <div class="card clean-card h-100">
+            <div class="card-body p-4">
+                <h2 class="section-title">Limites configuráveis</h2>
+                <p class="text-muted">A API pode bloquear com HTTP 429 quando houver rate limit. Como a quota restante não é exposta diretamente no app, estes limites são seus alarmes locais configuráveis.</p>
+                {{ limit_bar('Última hora', stats.hour.web_searches or 0, limits.hour) }}
+                {{ limit_bar('Hoje', stats.day.web_searches or 0, limits.day) }}
+                {{ limit_bar('Últimos 7 dias', stats.week.web_searches or 0, limits.week) }}
+                {{ limit_bar('Últimos 30 dias', stats.month.web_searches or 0, limits.month) }}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="card clean-card h-100">
+            <div class="card-body p-4">
+                <h2 class="section-title">Ambiente</h2>
+                <div class="status-row"><span>API key</span><strong>{{ api_key_masked }}</strong></div>
+                <div class="status-row"><span>Ollama local</span><strong>{{ local_url }}</strong></div>
+                <div class="status-row"><span>Modelo padrão</span><strong>{{ default_model }}</strong></div>
+                <div class="status-row"><span>App</span><strong>{{ app_host }}:{{ app_port }}</strong></div>
+                <div class="mt-3">
+                {% if ollama_status.ok %}
+                    <div class="pill-ok"><i class="bi bi-check-circle"></i> Ollama conectado</div>
+                {% else %}
+                    <div class="pill-bad"><i class="bi bi-x-circle"></i> Ollama não conectado</div>
+                {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card clean-card mt-4">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+            <div>
+                <h2 class="section-title mb-1">IAs / APIs externas</h2>
+                <p class="text-muted mb-0">Configuração monitorada localmente. Clique em <strong>Stats</strong> para ver status, chave e observações de uso.</p>
+            </div>
+            <a href="{{ url_for('settings') }}" class="btn btn-soft"><i class="bi bi-sliders"></i> Editar</a>
+        </div>
+        <div class="external-ai-status-grid">
+            {% for provider in ai_providers %}
+            <div class="external-ai-status-card">
+                <div>
+                    <div class="external-ai-name">{{ provider.name }}</div>
+                    <div class="external-ai-meta">{{ provider.category }}</div>
+                </div>
+                <div class="external-ai-status-actions">
+                    {% if provider.enabled %}<span class="badge text-bg-success">ativo</span>{% else %}<span class="badge text-bg-secondary">off</span>{% endif %}
+                    {% if provider.configured %}<span class="badge text-bg-primary">key</span>{% else %}<span class="badge text-bg-light text-dark">sem key</span>{% endif %}
+                    <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="modal" data-bs-target="#providerStats{{ provider.id }}">Stats</button>
+                </div>
+            </div>
+
+            <div class="modal fade" id="providerStats{{ provider.id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content help-modal-content">
+                        <div class="modal-header help-modal-header">
+                            <div>
+                                <div class="help-modal-kicker">Stats do provedor</div>
+                                <h5 class="modal-title">{{ provider.name }}</h5>
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="status-row"><span>Estado</span><strong>{% if provider.enabled %}Ativo{% else %}Desativado{% endif %}</strong></div>
+                            <div class="status-row"><span>API key</span><strong>{{ provider.masked_key }}</strong></div>
+                            <div class="status-row"><span>Categoria</span><strong>{{ provider.category }}</strong></div>
+                            <div class="status-row"><span>Teste</span><strong>{{ provider.test_label }}</strong></div>
+                            <div class="mt-3 text-muted small">{{ provider.note }}</div>
+                            <div class="mt-3 alert alert-light border rounded-4 mb-0">Uso registrado pelo app: ainda não há roteamento de perguntas para este provedor. Esta tela monitora configuração/ativação e deixa o terreno pronto para a próxima etapa.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+
+<div class="card clean-card mt-4">
+    <div class="card-body p-4">
+        <h2 class="section-title">Modo econômico ativo</h2>
+        <p class="text-muted">Esses são os limites atuais usados pelo app antes de chamar o Ollama local.</p>
+        <div class="resource-grid">
+            <div class="resource-box"><span>Fontes padrão</span><strong>{{ resource_limits.default_max_results }}</strong></div>
+            <div class="resource-box"><span>Teto de fontes</span><strong>{{ resource_limits.max_results_cap }}</strong></div>
+            <div class="resource-box"><span>Contexto</span><strong>{{ resource_limits.num_ctx }}</strong></div>
+            <div class="resource-box"><span>Máx. saída</span><strong>{{ resource_limits.num_predict }}</strong></div>
+            <div class="resource-box"><span>Threads</span><strong>{{ resource_limits.num_thread }}</strong></div>
+            <div class="resource-box"><span>Keep alive</span><strong>{{ resource_limits.keep_alive }}</strong></div>
+            <div class="resource-box"><span>Fonte chars</span><strong>{{ resource_limits.max_source_chars }}</strong></div>
+            <div class="resource-box"><span>Total chars</span><strong>{{ resource_limits.max_total_source_chars }}</strong></div>
+        </div>
+    </div>
+</div>
+
+
+<div class="card clean-card mt-4">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+            <div>
+                <h2 class="section-title mb-1">Jobs rodando agora</h2>
+                <p class="text-muted mb-0">Use <strong>Cancelar</strong> primeiro. Se o Ollama ignorar, use <strong>Forçar</strong>, que tenta encerrar só o runner do modelo sem fechar o Ollama.</p>
+            </div>
+            <button class="btn btn-soft" type="button" onclick="refreshJobs()"><i class="bi bi-arrow-clockwise"></i> Atualizar</button>
+        </div>
+
+        <div id="activeJobsBox">
+        {% if active_jobs %}
+            {% for job in active_jobs %}
+            <div class="active-job-card" data-job-id="{{ job.id }}">
+                <div class="active-job-icon"><i class="bi bi-activity"></i></div>
+                <div class="active-job-main">
+                    <div class="active-job-title">{{ job.model }}</div>
+                    <div class="active-job-query">{{ job.query_short }}</div>
+                    <div class="active-job-stage"><i class="bi bi-arrow-right-circle"></i> {{ job.stage }}</div>
+                    <div class="active-job-meta">Rodando há {{ job.age_seconds }}s{% if job.cancel_requested %} · cancelamento solicitado{% endif %}</div>
+                </div>
+                <div class="active-job-actions">
+                    <button class="btn btn-sm btn-outline-danger" type="button" onclick="cancelJob('{{ job.id }}')">
+                        <i class="bi bi-stop-fill"></i> Cancelar
+                    </button>
+                    <button class="btn btn-sm btn-danger" type="button" onclick="forceCancelJob('{{ job.id }}')">
+                        <i class="bi bi-exclamation-octagon"></i> Forçar
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-mini">Nenhum job rodando agora. Silêncio raro, aproveite.</div>
+        {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card clean-card mt-4">
+    <div class="card-body p-4">
+        <h2 class="section-title">Modelos detectados agora</h2>
+        {% if models %}
+            <div class="model-list">
+                {% for model in models %}<span>{{ model }}</span>{% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted">Nenhum modelo detectado. Rode <code>ollama pull gemma3:4b</code> e recarregue.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card clean-card mt-4">
+    <div class="card-body p-4">
+        <h2 class="section-title">Últimas execuções</h2>
+        {% if recent_logs %}
+        <div class="table-responsive">
+            <table class="table align-middle table-clean">
+                <thead><tr><th>Data</th><th>Modelo</th><th>Web</th><th>Chat</th><th>Fontes</th><th>Tokens</th><th>Erro</th></tr></thead>
+                <tbody>
+                {% for log in recent_logs %}
+                    <tr>
+                        <td>{{ log.created_at }}</td>
+                        <td>{{ log.model }}</td>
+                        <td>{% if log.web_ok %}<span class="badge text-bg-success">ok</span>{% else %}<span class="badge text-bg-danger">erro</span>{% endif %}</td>
+                        <td>{% if log.chat_ok %}<span class="badge text-bg-success">ok</span>{% else %}<span class="badge text-bg-danger">erro</span>{% endif %}</td>
+                        <td>{{ log.source_count }}</td>
+                        <td>{{ log.prompt_eval_count }} / {{ log.eval_count }}</td>
+                        <td class="small text-muted">{{ log.error_message[:120] }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            <p class="text-muted">Nenhum uso registrado ainda.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

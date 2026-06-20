@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Consulta #{{ item.id }} · Ollama Web Platform{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Consulta #{{ item.id }}</h1>
+        <p>{{ item.created_at }} · Modelo: {{ item.model }}</p>
+    </div>
+    <div class="btn-group">
+        <a class="btn btn-outline-secondary" href="{{ url_for('export_item', item_id=item.id, fmt='md') }}">MD</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('export_item', item_id=item.id, fmt='txt') }}">TXT</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('export_item', item_id=item.id, fmt='json') }}">JSON</a>
+    </div>
+</div>
+
+<div class="card clean-card mb-4">
+    <div class="card-body p-4">
+        <h2 class="section-title">Pergunta</h2>
+        <div class="question-box">{{ item.query }}</div>
+    </div>
+</div>
+
+<div class="result-grid">
+    <section class="card clean-card">
+        <div class="card-body p-4">
+            <h2 class="section-title">Resposta</h2>
+            <div class="answer-box" id="answerBox">{{ answer_html|safe if answer_html else item.answer }}</div>
+            <textarea id="answerCopyText" class="answer-copy-raw" aria-hidden="true">{{ item.answer }}</textarea>
+            <div class="accordion answer-full-accordion mt-3" id="answerFullAccordion">
+                <div class="accordion-item source-accordion-item">
+                    <h2 class="accordion-header" id="answerFullHeading">
+                        <button class="accordion-button collapsed source-accordion-button answer-full-button" type="button" data-bs-toggle="collapse" data-bs-target="#answerFullCollapse" aria-expanded="false" aria-controls="answerFullCollapse">
+                            <span class="source-index-mini"><i class="bi bi-body-text"></i></span>
+                            <span class="source-accordion-title">Ver resposta completa (com referências inline e texto integral)</span>
+                        </button>
+                    </h2>
+                    <div id="answerFullCollapse" class="accordion-collapse collapse" aria-labelledby="answerFullHeading" data-bs-parent="#answerFullAccordion">
+                        <div class="accordion-body source-accordion-body answer-full-body">
+                            <div class="answer-box answer-box-full">{{ answer_full_html|safe if answer_full_html else item.answer }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="answer-bottom-actions mt-3">
+                <button class="btn btn-soft" onclick="copyCleanAnswer(this)"><i class="bi bi-copy"></i> Copiar resposta</button>
+                <button class="btn btn-soft" onclick="copyFullAnswer(this)"><i class="bi bi-files"></i> Copiar resposta completa</button>
+            </div>
+        </div>
+    </section>
+
+    <aside class="card clean-card">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+                <h2 class="section-title mb-0">Fontes</h2>
+                <span class="source-count-badge">{{ item.sources|length }}</span>
+            </div>
+            <div class="accordion source-accordion" id="historySourcesAccordion">
+                {% for source in item.sources %}
+                <div class="accordion-item source-accordion-item">
+                    <h2 class="accordion-header" id="historySourceHeading{{ loop.index }}">
+                        <button class="accordion-button collapsed source-accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#historySourceCollapse{{ loop.index }}" aria-expanded="false" aria-controls="historySourceCollapse{{ loop.index }}">
+                            <span class="source-index-mini">[{{ loop.index }}]</span>
+                            <span class="source-accordion-title">{{ source.title }}</span>
+                        </button>
+                    </h2>
+                    <div id="historySourceCollapse{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="historySourceHeading{{ loop.index }}" data-bs-parent="#historySourcesAccordion">
+                        <div class="accordion-body source-accordion-body">
+                            <a href="{{ source.url }}" target="_blank" class="source-url"><i class="bi bi-box-arrow-up-right"></i> Abrir fonte</a>
+                            <p>{{ source.content }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </aside>
+</div>
+{% endblock %}

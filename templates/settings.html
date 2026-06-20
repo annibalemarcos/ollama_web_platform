@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Configurações · Ollama Web Platform{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Configurações</h1>
+        <p>Edite API key, modelo padrão, URL local e limites do painel.</p>
+    </div>
+    <a class="btn btn-soft" href="{{ url_for('status') }}"><i class="bi bi-graph-up"></i> Status</a>
+</div>
+
+{% if message %}<div class="alert alert-success rounded-4 border-0 shadow-sm">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger rounded-4 border-0 shadow-sm">{{ error }}</div>{% endif %}
+
+<div class="card clean-card mb-4">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+                <h2 class="section-title mb-1">Backup das configurações</h2>
+                <p class="text-muted mb-0">Exporte ou importe todas as configurações locais. O export inclui as API keys salvas, então trate esse arquivo como senha.</p>
+            </div>
+            <a class="btn btn-dark" href="{{ url_for('settings_export') }}"><i class="bi bi-download"></i> Exportar configurações</a>
+        </div>
+        <form method="post" action="{{ url_for('settings_import') }}" enctype="multipart/form-data" class="settings-import-row mt-3">
+            <input type="file" name="config_file" class="form-control" accept=".json,.env,text/plain,application/json" required>
+            <button class="btn btn-outline-dark" type="submit"><i class="bi bi-upload"></i> Importar configurações</button>
+        </form>
+        <div class="form-text mt-2">Use o JSON exportado pelo app. Também aceita um arquivo <code>.env</code> simples com linhas <code>CHAVE=valor</code>.</div>
+    </div>
+</div>
+
+<form method="post" class="card clean-card">
+    <div class="card-body p-4">
+        <h2 class="section-title">API da Ollama</h2>
+        <div class="row g-3 mb-4">
+            <div class="col-lg-5">
+                <label class="form-label fw-semibold">Chave atual</label>
+                <input class="form-control" id="ollama_key_masked" value="{{ api_key_masked }}" disabled>
+            </div>
+            <div class="col-lg-7">
+                <label class="form-label fw-semibold">Nova API key</label>
+                <input type="password" name="new_api_key" id="ollama_new_api_key" class="form-control" placeholder="Deixe vazio para manter a atual">
+                <div class="form-text">Use este campo para trocar/modificar a chave.</div>
+            </div>
+            <div class="col-12">
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <button type="button" class="btn btn-sm btn-dark" onclick="saveOllamaApi(this)"><i class="bi bi-save"></i> Salvar API</button>
+                    <button type="button" class="btn btn-sm btn-outline-dark" onclick="testOllamaApi(this)"><i class="bi bi-plug"></i> Testar conexão</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearOllamaApi(this)"><i class="bi bi-trash"></i> Remover chave</button>
+                    <span class="provider-test-result small" id="ollama_api_result"></span>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="section-title">Outras IAs / APIs externas</h2>
+        <p class="text-muted">Cadastre chaves de outros serviços. Ativar aqui não troca automaticamente o modelo principal ainda; deixa as integrações prontas para os próximos passos e permite testar conexão.</p>
+        <div class="external-ai-toolbar mb-3">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="activate_all_with_keys" id="activate_all_with_keys">
+                <label class="form-check-label fw-semibold" for="activate_all_with_keys">Ativar todas que tiverem API key ao salvar</label>
+            </div>
+            <span class="text-muted small">As chaves ficam no arquivo local <code>.env</code>. Não suba isso para GitHub.</span>
+        </div>
+        <div class="external-ai-filterbar mb-3">
+            <div class="external-ai-searchbox">
+                <i class="bi bi-search"></i>
+                <input type="search" id="externalAiSearch" class="form-control" placeholder="Buscar por nome, tipo ou observação..." oninput="filterExternalProviders()">
+            </div>
+            <select id="externalAiStatusFilter" class="form-select" onchange="filterExternalProviders()">
+                <option value="all">Exibir todas</option>
+                <option value="active">Somente ativas</option>
+                <option value="inactive">Somente desativadas</option>
+                <option value="configured">Somente com API key</option>
+                <option value="missing_key">Somente sem API key</option>
+                <option value="real_test">Somente teste real</option>
+                <option value="basic_test">Somente teste básico</option>
+            </select>
+            <button type="button" class="btn btn-outline-secondary" onclick="clearExternalProviderFilters()"><i class="bi bi-x-circle"></i> Limpar filtros</button>
+            <span class="external-ai-filter-count" id="externalAiFilterCount"></span>
+        </div>
+        <div class="external-ai-grid mb-4">
+            {% for provider in ai_providers %}
+            <div class="external-ai-card" data-provider-card="{{ provider.id }}" data-provider-name="{{ provider.name|lower }}" data-provider-category="{{ provider.category|lower }}" data-provider-note="{{ provider.note|lower }}" data-provider-test="{{ provider.test }}" data-provider-configured="{{ '1' if provider.configured else '0' }}">
+                <div class="external-ai-head">
+                    <div>
+                        <div class="external-ai-name">{{ provider.name }}</div>
+                        <div class="external-ai-meta">{{ provider.category }} · {{ provider.test_label }}</div>
+                    </div>
+                    <div class="form-check form-switch external-ai-switch">
+                        <input class="form-check-input" type="checkbox" name="provider_enabled_{{ provider.id }}" id="provider_enabled_{{ provider.id }}" {% if provider.enabled %}checked{% endif %}>
+                    </div>
+                </div>
+                <div class="external-ai-body">
+                    <a href="{{ provider.site_url }}" target="_blank" class="external-ai-link"><i class="bi bi-box-arrow-up-right"></i> Site oficial</a>
+                    <div class="small text-muted mt-1">Chave atual: <strong id="provider_masked_{{ provider.id }}">{{ provider.masked_key }}</strong></div>
+                    <label class="form-label fw-semibold mt-2">Nova API key</label>
+                    <input type="password" name="provider_key_{{ provider.id }}" id="provider_key_{{ provider.id }}" class="form-control" placeholder="Deixe vazio para manter">
+                    <div class="external-ai-note">{{ provider.note }}</div>
+                    <div class="d-flex gap-2 align-items-center flex-wrap mt-3">
+                        <button type="button" class="btn btn-sm btn-dark" onclick="saveProvider('{{ provider.id }}', this)"><i class="bi bi-save"></i> Salvar API</button>
+                        <button type="button" class="btn btn-sm btn-outline-dark" onclick="testProvider('{{ provider.id }}', this)"><i class="bi bi-plug"></i> Testar conexão</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearProvider('{{ provider.id }}', this)"><i class="bi bi-trash"></i> Apagar chave</button>
+                        <span class="provider-test-result small" id="provider_test_{{ provider.id }}"></span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <h2 class="section-title">Ollama local</h2>
+        <div class="row g-3 mb-4">
+            <div class="col-lg-5">
+                <label class="form-label fw-semibold">URL local</label>
+                <input name="ollama_local_url" class="form-control" value="{{ env.OLLAMA_LOCAL_URL }}">
+            </div>
+            <div class="col-lg-7">
+                <label class="form-label fw-semibold">Modelo padrão</label>
+                <select name="ollama_model" class="form-select model-select">
+                    {% for model in models %}
+                        <option value="{{ model.name }}" {% if env.OLLAMA_MODEL == model.name %}selected{% endif %}>{{ model.option_label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Mostra catálogo completo; verde = instalado, vermelho = ainda precisa baixar.</div>
+            </div>
+        </div>
+
+        <h2 class="section-title">App Flask</h2>
+        <div class="row g-3 mb-4">
+            <div class="col-lg-4">
+                <label class="form-label fw-semibold">Host</label>
+                <input name="app_host" class="form-control" value="{{ env.APP_HOST }}">
+            </div>
+            <div class="col-lg-4">
+                <label class="form-label fw-semibold">Porta</label>
+                <input name="app_port" class="form-control" value="{{ env.APP_PORT }}">
+            </div>
+            <div class="col-lg-4 d-flex align-items-end">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="flask_debug" id="flask_debug" {% if env.FLASK_DEBUG == '1' %}checked{% endif %}>
+                    <label class="form-check-label" for="flask_debug">Debug ligado</label>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="section-title">Limites para alerta local</h2>
+        <p class="text-muted">Use 0 para desativar. Estes limites alimentam os progressos do Status.</p>
+        <div class="row g-3">
+            <div class="col-md-3"><label class="form-label fw-semibold">Por hora</label><input name="api_hourly_limit" class="form-control" value="{{ env.API_HOURLY_LIMIT }}"></div>
+            <div class="col-md-3"><label class="form-label fw-semibold">Por dia</label><input name="api_daily_limit" class="form-control" value="{{ env.API_DAILY_LIMIT }}"></div>
+            <div class="col-md-3"><label class="form-label fw-semibold">Por semana</label><input name="api_weekly_limit" class="form-control" value="{{ env.API_WEEKLY_LIMIT }}"></div>
+            <div class="col-md-3"><label class="form-label fw-semibold">Por mês</label><input name="api_monthly_limit" class="form-control" value="{{ env.API_MONTHLY_LIMIT }}"></div>
+        </div>
+
+
+        <h2 class="section-title mt-4">Modo econômico / Recursos do PC</h2>
+        <p class="text-muted">Esses controles reduzem RAM/CPU e evitam várias perguntas rodando ao mesmo tempo. Para PC com 16 GB, os valores padrão são conservadores.</p>
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Fontes padrão</label>
+                <input name="default_max_results" type="number" min="1" class="form-control" value="{{ env.DEFAULT_MAX_RESULTS }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Teto de fontes</label>
+                <input name="max_results_cap" type="number" min="1" class="form-control" value="{{ env.MAX_RESULTS_CAP }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Caracteres por fonte</label>
+                <input name="max_source_chars" type="number" min="300" class="form-control" value="{{ env.MAX_SOURCE_CHARS }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Caracteres totais das fontes</label>
+                <input name="max_total_source_chars" type="number" min="1000" class="form-control" value="{{ env.MAX_TOTAL_SOURCE_CHARS }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Contexto Ollama</label>
+                <input name="ollama_num_ctx" type="number" min="512" class="form-control" value="{{ env.OLLAMA_NUM_CTX }}">
+                <div class="form-text">Menor = menos RAM. 2048 é seguro.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Máx. tokens de resposta</label>
+                <input name="ollama_num_predict" type="number" min="64" class="form-control" value="{{ env.OLLAMA_NUM_PREDICT }}">
+                <div class="form-text">512 evita textão infinito.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Threads CPU</label>
+                <input name="ollama_num_thread" type="number" min="1" class="form-control" value="{{ env.OLLAMA_NUM_THREAD }}">
+                <div class="form-text">2 ou 3 para não travar tudo.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Keep alive</label>
+                <input name="ollama_keep_alive" class="form-control" value="{{ env.OLLAMA_KEEP_ALIVE }}">
+                <div class="form-text">0 descarrega o modelo após responder.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Timeout local</label>
+                <input name="ollama_request_timeout" type="number" min="30" class="form-control" value="{{ env.OLLAMA_REQUEST_TIMEOUT }}">
+            </div>
+            <div class="col-md-5 d-flex align-items-end">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="app_busy_reject" id="app_busy_reject" {% if env.APP_BUSY_REJECT == '1' %}checked{% endif %}>
+                    <label class="form-check-label" for="app_busy_reject">Bloquear nova pergunta enquanto outra ainda está rodando</label>
+                </div>
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="pc_stats_enabled" id="pc_stats_enabled" {% if env.PC_STATS_ENABLED == '1' %}checked{% endif %}>
+                    <label class="form-check-label fw-semibold" for="pc_stats_enabled"><i class="bi bi-speedometer2"></i> Stats do PC em tempo real</label>
+                    <div class="form-text">Quando desligado, o app não fica consultando CPU/RAM/rede.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-4">
+            <button class="btn btn-dark px-4" type="submit"><i class="bi bi-save"></i> Salvar configurações</button>
+            <a href="{{ url_for('settings') }}" class="btn btn-outline-secondary px-4">Recarregar</a>
+        </div>
+    </div>
+</form>
+{% endblock %}

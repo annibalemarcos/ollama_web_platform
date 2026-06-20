@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Histórico · Ollama Web Platform{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Histórico</h1>
+        <p>Consultas salvas localmente em SQLite.</p>
+    </div>
+    {% if items %}
+    <form method="post" action="{{ url_for('history_clear') }}" onsubmit="return confirm('Apagar todo o histórico?')">
+        <button class="btn btn-outline-danger"><i class="bi bi-trash3"></i> Limpar tudo</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if not items %}
+<div class="empty-state">
+    <i class="bi bi-inbox"></i>
+    <h3>Nenhuma consulta ainda</h3>
+    <p>Faça uma pesquisa e ela aparecerá aqui.</p>
+    <a class="btn btn-dark" href="{{ url_for('index') }}">Começar</a>
+</div>
+{% else %}
+<div class="history-list">
+    {% for item in items %}
+    <div class="card clean-card history-card">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between gap-3">
+                <div>
+                    <div class="history-date">{{ item.created_at }} · {{ item.model }}</div>
+                    <h2>{{ item.query }}</h2>
+                    <p>{{ item.answer[:280] }}{% if item.answer|length > 280 %}...{% endif %}</p>
+                </div>
+                <div class="history-actions">
+                    <a class="btn btn-sm btn-dark" href="{{ url_for('history_detail', item_id=item.id) }}">Abrir</a>
+                    <form method="post" action="{{ url_for('history_delete', item_id=item.id) }}" onsubmit="return confirm('Apagar este item?')">
+                        <button class="btn btn-sm btn-outline-danger">Apagar</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

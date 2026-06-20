@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}Pesquisar · Ollama Web Platform{% endblock %}
+
+{% block content %}
+{% macro help_label(text, topic) %}
+<label class="form-label fw-semibold help-label">
+    <span>{{ text }}</span>
+    <button type="button" class="help-dot" data-help-topic="{{ topic }}" aria-label="Ajuda sobre {{ text }}">?</button>
+</label>
+{% endmacro %}
+<div class="page-header page-hero">
+    <div class="page-hero-copy">
+        <div class="hero-kicker">Workspace local · Flask + Ollama</div>
+        <h1>Pesquisar com IA local</h1>
+        <p>Escolha modo local, pesquisa web ou motores externos configurados. Pesquisa, síntese e IA no mesmo painel, com cara menos de rascunho e mais de produto de verdade.</p>
+        <div class="hero-chip-row">
+            <span class="hero-chip"><i class="bi bi-shield-lock"></i> Privado/local</span>
+            <span class="hero-chip"><i class="bi bi-wifi"></i> Busca web guiada</span>
+            <span class="hero-chip"><i class="bi bi-cpu"></i> Modelos Ollama</span>
+        </div>
+    </div>
+    <div class="page-header-actions">
+        {% if pc_stats_enabled %}
+        <button class="btn btn-soft btn-premium btn-icon-only" type="button" data-bs-toggle="modal" data-bs-target="#pcStatsModal" onclick="refreshPcStats()" title="Stats do PC" aria-label="Stats do PC">
+            <i class="bi bi-speedometer2"></i>
+        </button>
+        {% endif %}
+        <a class="btn btn-soft btn-premium btn-icon-only" href="{{ url_for('status') }}" title="Status e uso" aria-label="Status e uso">
+            <i class="bi bi-activity"></i>
+        </a>
+    </div>
+</div>
+
+{% if pc_stats_enabled %}
+<div class="modal fade" id="pcStatsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content help-modal-content">
+            <div class="modal-header help-modal-header">
+                <div>
+                    <div class="help-modal-kicker">Tempo real</div>
+                    <h5 class="modal-title"><i class="bi bi-speedometer2"></i> Stats do PC</h5>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="pc-stats-grid" data-pc-stats-root>
+                    <div class="pc-stat-card"><i class="bi bi-cpu"></i><strong data-pc-stat="cpu.percent">--</strong><span>CPU</span></div>
+                    <div class="pc-stat-card"><i class="bi bi-memory"></i><strong data-pc-stat="memory.percent">--</strong><span>RAM</span></div>
+                    <div class="pc-stat-card"><i class="bi bi-hdd"></i><strong data-pc-stat="disk.percent">--</strong><span>Disco</span></div>
+                    <div class="pc-stat-card"><i class="bi bi-download"></i><strong data-pc-stat="network.download_label">--</strong><span>Download</span></div>
+                    <div class="pc-stat-card"><i class="bi bi-upload"></i><strong data-pc-stat="network.upload_label">--</strong><span>Upload</span></div>
+                    <div class="pc-stat-card"><i class="bi bi-box"></i><strong data-pc-stat="processes.ollama.memory_mb">--</strong><span>Ollama MB</span></div>
+                    <div class="pc-stat-card"><i class="bi bi-filetype-py"></i><strong data-pc-stat="processes.python.memory_mb">--</strong><span>Python MB</span></div>
+                    <div class="pc-stat-card"><i class="bi bi-clock-history"></i><strong data-pc-stat="updated_at">--</strong><span>Atualizado</span></div>
+                </div>
+                <div class="text-muted small mt-3" id="pcStatsMessage">Abre o modal e o app atualiza a cada 2 segundos. Fechou, ele para de consultar.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="alert alert-light border rounded-4 shadow-sm eco-banner">
+    <strong>Modo econômico ligado.</strong>
+    Fontes até <strong>{{ max_results_cap }}</strong>, contexto <strong>{{ resource_limits.num_ctx }}</strong>, saída máx. <strong>{{ resource_limits.num_predict }}</strong> tokens, threads <strong>{{ resource_limits.num_thread }}</strong>, keep_alive <strong>{{ resource_limits.keep_alive }}</strong>.
+</div>
+
+{% if not ollama_status.ok %}
+<div class="alert alert-warning rounded-4 border-0 shadow-sm">
+    <strong>Ollama local não respondeu.</strong><br>
+    Abra o Ollama e baixe um modelo, por exemplo:
+    <code>ollama pull gemma3:4b</code>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert {% if busy_job %}alert-warning{% else %}alert-danger{% endif %} rounded-4 border-0 shadow-sm">
+    <strong>Ops:</strong> {{ error }}
+    {% if busy_job %}
+        <div class="busy-job-box mt-3" data-job-id="{{ busy_job.id }}">
+            <div>
+                <strong>Job anterior:</strong> {{ busy_job.model }}
+                <div class="small text-muted">{{ busy_job.query_short }}</div>
+                <div class="small text-muted">Etapa: {{ busy_job.stage }}</div>
+                <div class="small text-muted">Rodando há {{ busy_job.age_seconds }}s</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="cancelCurrentJob('{{ busy_job.id }}')">
+                    <i class="bi bi-stop-fill"></i> Cancelar anterior
+                </button>
+                <button type="button" class="btn btn-sm btn-danger" onclick="forceCancelCurrentJob('{{ busy_job.id }}')">
+                    <i class="bi bi-exclamation-octagon"></i> Forçar parada
+                </button>
+                <button type="button" class="btn btn-sm btn-dark" onclick="forceCancelAndRetry('{{ busy_job.id }}')">
+                    <i class="bi bi-arrow-repeat"></i> Forçar e tentar esta pergunta
+                </button>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="card clean-card mb-4" id="askCard">
+    <div class="card-body p-4">
+        <form method="post" id="askForm">
+            <div class="mb-4">
+                {{ help_label("Pergunta", "pergunta") }}
+                <div class="prompt-composer">
+                    <textarea id="questionInput" name="query" class="prompt-input" placeholder="Pergunte alguma coisa...">{{ query }}</textarea>
+                    <div class="prompt-composer-footer">
+                        <div class="composer-left">
+                            <a class="composer-pill" href="{{ url_for('index') }}" title="Limpar pergunta e resposta">
+                                <i class="bi bi-eraser"></i> Limpar
+                            </a>
+                            {% if answer %}
+                            <a class="composer-pill composer-pill-primary" href="#answerSection" title="Ir para a resposta">
+                                <i class="bi bi-arrow-down-circle"></i> Ir para resposta
+                            </a>
+                            {% endif %}
+                            <span id="cancelStatus" class="composer-status">Pronto para receber a próxima pergunta.</span>
+                        </div>
+                        <div class="composer-actions">
+                            <button class="composer-button send-action" type="submit" id="submitBtn" title="Enviar" aria-label="Enviar pergunta">
+                                <i class="bi bi-arrow-up"></i>
+                            </button>
+                            <button class="composer-button stop-action d-none" type="button" id="stopBtn" title="Cancelar com segurança" aria-label="Cancelar geração">
+                                <i class="bi bi-stop-fill"></i>
+                            </button>
+                            <button class="composer-button force-action d-none" type="button" id="forceStopBtn" title="Forçar runner do modelo" aria-label="Forçar runner do modelo">
+                                <i class="bi bi-exclamation-octagon"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3 execution-layout">
+                <div class="col-12">
+                    <div class="mini-control-card execution-profile-card">
+                        {{ help_label("Como rodar", "perfil_execucao") }}
+                        <select name="execution_profile" id="executionProfile" class="form-select" onchange="applyExecutionProfile()">
+                            <option value="standard" {% if execution_profile == 'standard' %}selected{% endif %}>Padrão (do jeito atual)</option>
+                            <option value="local_only" {% if execution_profile == 'local_only' %}selected{% endif %}>Somente local (sem web/API de busca)</option>
+                            <option value="web" {% if execution_profile == 'web' %}selected{% endif %}>Pesquisa Web guiada (resposta local)</option>
+                            <option value="cloud_web" {% if execution_profile == 'cloud_web' %}selected{% endif %}>Web/Cloud (sem Ollama local)</option>
+                            <option value="advanced" {% if execution_profile == 'advanced' %}selected{% endif %}>Avançado: escolher motores</option>
+                            <option value="all" {% if execution_profile == 'all' %}selected{% endif %}>Todos / Multi-IA</option>
+                        </select>
+                        <div class="mini-control-note">Escolha primeiro o caminho. Use Web/Cloud quando quiser gerar a resposta fora do Ollama local.</div>
+                    </div>
+                </div>
+
+                <div class="col-12 execution-panel {% if execution_profile == 'cloud_web' %}d-none{% endif %}" data-execution-panel="local">
+                    <details class="execution-accordion" id="localModelPanel" {% if execution_profile in ['local_only', 'web', 'advanced', 'all'] %}open{% endif %}>
+                        <summary>
+                            <span><i class="bi bi-cpu"></i> Modelo local (Ollama)</span>
+                            <small>Modelo do seu PC. Abra só quando quiser trocar o cérebro local.</small>
+                        </summary>
+                        <div class="execution-accordion-body">
+                            <div class="row g-3">
+                                <div class="col-12">
+                    {{ help_label("Modelo", "modelo") }}
+                    <input type="hidden" name="model" id="modelInput" value="{{ selected_model }}">
+                    <div class="dropdown model-picker">
+                        <button
+                            class="model-picker-button dropdown-toggle"
+                            type="button"
+                            id="modelPickerButton"
+                            data-bs-toggle="dropdown"
+                            data-bs-auto-close="outside"
+                            aria-expanded="false"
+                        >
+                            <span class="model-picker-placeholder">Escolha um modelo</span>
+                        </button>
+                        <div class="dropdown-menu model-picker-menu" aria-labelledby="modelPickerButton">
+                            <div class="model-picker-search-wrap">
+                                <i class="bi bi-search"></i>
+                                <input type="text" id="modelPickerSearch" class="model-picker-search" placeholder="Filtrar modelos...">
+                            </div>
+                            <div class="model-choice-list">
+                                {% for model in models %}
+                                <div
+                                    role="button"
+                                    tabindex="0"
+                                    class="model-choice {% if model.installed %}is-installed{% else %}is-missing{% endif %}"
+                                    data-name="{{ model.name }}"
+                                    data-installed="{{ '1' if model.installed else '0' }}"
+                                    data-status="{{ model.status_label }}"
+                                    data-size="{{ model.size }}"
+                                    data-level="{{ model.level }}"
+                                    data-category="{{ model.category }}"
+                                    data-good-for="{{ model.good_for }}"
+                                    data-warning="{{ model.warning }}"
+                                    data-hint="{{ model.hint }}"
+                                    data-tags="{{ model.tags | join(', ') }}"
+                                    data-command="{{ model.install_command }}"
+                                >
+                                    <span class="model-choice-icon">
+                                        {% if model.installed %}<i class="bi bi-check2-circle"></i>{% else %}<i class="bi bi-cloud-arrow-down"></i>{% endif %}
+                                    </span>
+                                    <span class="model-choice-main">
+                                        <span class="model-choice-header">
+                                            <span class="model-choice-name">{{ model.name }}</span>
+                                            <span class="model-choice-side">
+                                                <span class="model-choice-side-top">
+                                                    <span class="model-choice-badge">{{ model.status_label }}</span>
+                                                    {% if model.installed %}
+                                                        <button type="button" class="model-action model-action-delete" data-model-action="delete" data-model="{{ model.name }}" title="Excluir modelo" aria-label="Excluir {{ model.name }}">
+                                                            <i class="bi bi-x-lg"></i>
+                                                        </button>
+                                                    {% else %}
+                                                        <button type="button" class="model-action model-action-download" data-model-action="pull" data-model="{{ model.name }}" title="Baixar modelo" aria-label="Baixar {{ model.name }}">
+                                                            <i class="bi bi-download"></i>
+                                                        </button>
+                                                    {% endif %}
+                                                </span>
+                                                <span class="model-choice-progress d-none" data-progress-for="{{ model.name }}">
+                                                    <span class="model-choice-progress-track"><span class="model-choice-progress-bar"></span></span>
+                                                    <span class="model-choice-progress-text">Aguardando...</span>
+                                                </span>
+                                            </span>
+                                        </span>
+                                        <span class="model-choice-desc">{{ model.category }} · {{ model.level }} · {{ model.size }}</span>
+                                        <span class="model-choice-hint">{{ model.tags | join(' · ') }}</span>
+                                    </span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-text">Catálogo completo + verificação dos modelos instalados no Ollama local.</div>
+                                </div>
+                                <div class="col-lg-4">
+                                    <div class="mini-control-card">
+                                        {{ help_label("Temperatura", "temperatura") }}
+                                        <input type="number" step="0.1" min="0" max="1.5" name="temperature" class="form-control" value="{{ temperature }}">
+                                        <div class="mini-control-note">0.2 = mais preciso; 1.0 = mais criativo. Sobe para ideias, desce para respostas firmes.</div>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <details class="selected-model-shell selected-model-collapsible mt-1">
+                                        <summary class="selected-model-summary">
+                                            <span>
+                                                <span class="selected-model-eyebrow">Resumo do modelo selecionado</span>
+                                                <span class="selected-model-copy">Clique para ver pontos fortes, alertas e dicas práticas.</span>
+                                            </span>
+                                            <i class="bi bi-chevron-down"></i>
+                                        </summary>
+                                        <div class="selected-model-details-body">
+                                            <div id="modelInfo" class="model-info-box"></div>
+                                            <div id="modelTaskBox" class="model-task-box d-none mt-3"></div>
+                                        </div>
+                                    </details>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
+                <div class="col-12 execution-panel {% if execution_profile not in ['web', 'cloud_web', 'advanced', 'all'] %}d-none{% endif %}" data-execution-panel="advanced">
+                    <details class="execution-accordion" id="advancedEnginesPanel" {% if execution_profile in ['web', 'cloud_web', 'advanced', 'all'] %}open{% endif %}>
+                        <summary>
+                            <span><i class="bi bi-diagram-3"></i> Motores, busca e fontes</span>
+                            <small>Busca web/local-only, grupos, fontes e motor de resposta.</small>
+                        </summary>
+                        <div class="execution-accordion-body">
+                            <div class="row g-3">
+                                <div class="col-lg-3">
+                                    <div class="mini-control-card">
+                                        {{ help_label("Modo", "modo") }}
+                                        <select name="mode" class="form-select">
+                                            <option value="direto" {% if mode == 'direto' %}selected{% endif %}>Direto</option>
+                                            <option value="detalhado" {% if mode == 'detalhado' %}selected{% endif %}>Detalhado</option>
+                                            <option value="web" {% if mode in ['web', 'mercado', 'vendedor'] %}selected{% endif %}>Pesquisa Web</option>
+                                            <option value="tecnico" {% if mode == 'tecnico' %}selected{% endif %}>Técnico</option>
+                                        </select>
+                                        <div class="mini-control-note">Direto/técnico = local. Pesquisa Web = usa fontes quando o motor de busca permitir.</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3">
+                                    <div class="mini-control-card engine-control-card">
+                                        {{ help_label("Motor de resposta", "motor_resposta") }}
+                                        <select name="response_engine" class="form-select">
+                                            {% for option in engine_dropdowns.response %}
+                                                <option value="{{ option.id }}" {% if response_engine == option.id %}selected{% endif %}>{{ option.label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <div class="mini-control-note">Auto decide. Todos combina motores. Externos só aparecem se estiverem ativos e com API key.</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3">
+                                    <div class="mini-control-card engine-control-card">
+                                        {{ help_label("Motor de busca", "motor_busca") }}
+                                        <select name="search_engine" class="form-select">
+                                            {% for option in engine_dropdowns.search %}
+                                                <option value="{{ option.id }}" {% if search_engine == option.id %}selected{% endif %}>{{ option.label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <div class="mini-control-note">Auto, Todos ou Somente local. Buscadores externos só aparecem ativos/com API.</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3">
+                                    <div class="mini-control-card engine-control-card">
+                                        {{ help_label("Grupo recomendado", "grupo_ia") }}
+                                        <select name="task_group" class="form-select">
+                                            {% for option in engine_dropdowns.task_groups %}
+                                                <option value="{{ option.id }}" {% if task_group == option.id %}selected{% endif %}>{{ option.label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <div class="mini-control-note">Local, web/preço, técnico, acadêmico, cálculo ou todos.</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3">
+                                    <div class="mini-control-card">
+                                        {{ help_label("Fontes", "fontes") }}
+                                        <input type="number" name="max_results" min="1" max="{{ max_results_cap }}" class="form-control" value="{{ max_results }}">
+                                        <div class="mini-control-note">Cap atual: {{ max_results_cap }} fontes. Mais fontes = mais contexto e mais peso.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+<div id="progressPanel" class="progress-panel d-none" aria-live="polite">
+    <div class="progress-card">
+        <div class="progress-head">
+            <div class="progress-icon"><i class="bi bi-stars"></i></div>
+            <div>
+                <div class="progress-title">Trabalhando na sua pergunta</div>
+                <div id="progressStage" class="progress-stage">Preparando...</div>
+            </div>
+        </div>
+        <div class="progress progress-shell" role="progressbar" aria-label="Progresso aproximado">
+            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 8%"></div>
+        </div>
+        <div class="progress-steps">
+            <span data-step="0" class="is-active">Preparar</span>
+            <span data-step="1">Buscar web</span>
+            <span data-step="2">Organizar fontes</span>
+            <span data-step="3">Ollama</span>
+            <span data-step="4">Resposta</span>
+        </div>
+        <div class="progress-tip">Dica: modelos 4B/7B podem demorar. Se passar do ponto, use cancelar; se travar feio, force só o runner do modelo.</div>
+    </div>
+</div>
+
+{% if answer %}
+<div class="result-grid" id="answerSection">
+    <section class="card clean-card">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+                <h2 class="section-title mb-0">Resposta</h2>
+                {% if saved_id %}
+                <div class="btn-group">
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('export_item', item_id=saved_id, fmt='md') }}"><i class="bi bi-markdown"></i> MD</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('export_item', item_id=saved_id, fmt='txt') }}"><i class="bi bi-file-text"></i> TXT</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('export_item', item_id=saved_id, fmt='json') }}"><i class="bi bi-braces"></i> JSON</a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="answer-box" id="answerBox">{{ answer_html|safe if answer_html else answer }}</div>
+            <textarea id="answerCopyText" class="answer-copy-raw" aria-hidden="true">{{ answer }}</textarea>
+            <div class="accordion answer-full-accordion mt-3" id="answerFullAccordion">
+                <div class="accordion-item source-accordion-item">
+                    <h2 class="accordion-header" id="answerFullHeading">
+                        <button class="accordion-button collapsed source-accordion-button answer-full-button" type="button" data-bs-toggle="collapse" data-bs-target="#answerFullCollapse" aria-expanded="false" aria-controls="answerFullCollapse">
+                            <span class="source-index-mini"><i class="bi bi-body-text"></i></span>
+                            <span class="source-accordion-title">Ver resposta completa (com referências inline e texto integral)</span>
+                        </button>
+                    </h2>
+                    <div id="answerFullCollapse" class="accordion-collapse collapse" aria-labelledby="answerFullHeading" data-bs-parent="#answerFullAccordion">
+                        <div class="accordion-body source-accordion-body answer-full-body">
+                            <div class="answer-box answer-box-full">{{ answer_full_html|safe if answer_full_html else answer }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="answer-bottom-actions">
+                <button class="btn btn-soft" onclick="copyCleanAnswer(this)"><i class="bi bi-copy"></i> Copiar resposta</button>
+                <button class="btn btn-soft" onclick="copyFullAnswer(this)"><i class="bi bi-files"></i> Copiar resposta completa</button>
+                <a class="btn btn-dark" href="#askCard"><i class="bi bi-arrow-up-circle"></i> Voltar para pergunta</a>
+            </div>
+        </div>
+    </section>
+
+    <aside class="card clean-card">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+                <h2 class="section-title mb-0">Fontes</h2>
+                <span class="source-count-badge">{{ sources|length }}</span>
+            </div>
+            <p class="text-muted small mb-3">Compactadas em acordeão para não transformar a página num pergaminho medieval.</p>
+            <div class="accordion source-accordion" id="sourcesAccordion">
+                {% for source in sources %}
+                <div class="accordion-item source-accordion-item">
+                    <h2 class="accordion-header" id="sourceHeading{{ loop.index }}">
+                        <button class="accordion-button collapsed source-accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#sourceCollapse{{ loop.index }}" aria-expanded="false" aria-controls="sourceCollapse{{ loop.index }}">
+                            <span class="source-index-mini">[{{ loop.index }}]</span>
+                            <span class="source-accordion-title">{{ source.title }}</span>
+                        </button>
+                    </h2>
+                    <div id="sourceCollapse{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="sourceHeading{{ loop.index }}" data-bs-parent="#sourcesAccordion">
+                        <div class="accordion-body source-accordion-body">
+                            <a href="{{ source.url }}" target="_blank" class="source-url"><i class="bi bi-box-arrow-up-right"></i> Abrir fonte</a>
+                            <p>{{ source.content }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </aside>
+</div>
+{% endif %}
+
+
+<div class="modal fade" id="helpModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content help-modal-content">
+            <div class="modal-header help-modal-header">
+                <div>
+                    <div class="help-modal-kicker">Guia rápido</div>
+                    <h5 class="modal-title" id="helpModalTitle">Ajuda</h5>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="helpModalBody" class="help-modal-body"></div>
+            </div>
+            <div class="modal-footer help-modal-footer">
+                <button type="button" class="btn btn-dark px-4" data-bs-dismiss="modal">Entendi</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
